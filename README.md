@@ -1,3 +1,9 @@
+# ИИ-сервис первичной обработки обращений (с журналом и развёртыванием)
+
+- **Проблема:** хаос в обращениях и нагрузка на менеджеров.
+- **Решение:** программный интерфейс + языковая модель + журналирование + развёртывание + эскалация при сбоях.
+- **Результат:** быстрее реакция, ниже нагрузка, прозрачная история.
+
 # Support Triage API
 
 Сервис первичной сортировки обращений интернет-магазина: классификация, черновик ответа, аудит в SQLite.
@@ -50,6 +56,16 @@ OpenAI вызывается через [ProxyAPI](https://proxyapi.ru/docs/overv
 
 При ошибке LLM ответ всё равно 200: `escalate=true`, `draft_reply` = `Ваше обращение передано оператору.`, причина пишется в `tickets.error`.
 
+Форма для менеджера: http://127.0.0.1:8000 (`GET /`).
+
+## Поведение
+
+1. Черновик не обещает фактов, которых нет во входном `text`.
+2. Короткий текст вроде «Помогите» → `confidence=low`, `escalate=true`.
+3. Сбой ProxyAPI/OpenAI или невалидный JSON модели → шаблон оператору, запись `error`.
+4. Не больше `RATE_LIMIT_PER_MINUTE` запросов в минуту на один `client_id` (иначе 429).
+5. Temperature модели: `0.2`.
+
 ## Локальный запуск
 
 1. Python 3.10+ и ключ с [proxyapi.ru](https://proxyapi.ru/).
@@ -96,7 +112,7 @@ sqlite3 data/tickets.db "SELECT id, client_name, client_email, text, category, d
 sqlite3 data/tickets.db "SELECT * FROM clients;"
 ```
 
-Без `sqlite3` тот же файл открывается в DB Browser for SQLite.
+Без `sqlite3` тот же файл открывается в DB Browser for SQLite или DBeaver: `data/tickets.db`.
 
 ### Docker
 
@@ -107,6 +123,8 @@ docker compose up --build
 ```
 
 Сервис: http://localhost:8000
+
+Тот же `Dockerfile` можно собрать на хостинге (Render, Railway и т.п.). Ключ задаётся секретом окружения, в репозиторий он не входит.
 
 ### Тесты без живой модели
 
@@ -124,29 +142,3 @@ pytest -q
 - По желанию: DBeaver — просмотр `data/tickets.db`
 
 Пакеты Python (файл `requirements.txt`): FastAPI, Uvicorn, OpenAI SDK, pydantic-settings, python-dotenv, httpx, pytest.
-
-## Демонстрация (путь B)
-
-Выбран локальный показ без публичного сервера.
-
-Полный сценарий съёмки и список скриншотов: [demo/README.md](demo/README.md).
-
-Кратко:
-
-1. `docker compose up --build` или `uvicorn app.main:app --port 8000`
-2. Браузер http://127.0.0.1:8000 → обращение → тип и черновик
-3. DBeaver: `D:\MANAGER\data\tickets.db` → новая строка в `tickets`
-
-В репозиторий: видео `demo/triage-demo.mp4` и скрины `demo/screen-*.png`.
-
-## Развёртывание (путь A, не используется)
-
-Позже можно выложить тот же `Dockerfile` на Render/Railway. Для этой сдачи выбран путь B.
-
-1. Черновик не обещает фактов, которых нет во входном `text`.
-2. Короткий текст вроде «Помогите» → `confidence=low`, `escalate=true`.
-3. Сбой ProxyAPI/OpenAI или невалидный JSON модели → шаблон оператору, запись `error`.
-4. Не больше `RATE_LIMIT_PER_MINUTE` запросов в минуту на один `client_id` (иначе 429).
-5. Temperature модели: `0.2`.
-
-Схема решения: [ARCHITECTURE.md](ARCHITECTURE.md).
