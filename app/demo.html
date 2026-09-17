@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Обращения поддержки</title>
+  <style>
+    body { font-family: sans-serif; max-width: 920px; margin: 32px auto; padding: 0 16px; color: #222; }
+    h1, h2 { font-weight: 650; }
+    label { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px; font: inherit; }
+    textarea { min-height: 120px; }
+    button { margin-top: 16px; padding: 8px 16px; font: inherit; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .hint { color: #555; font-size: 14px; }
+    .result, .item { border: 1px solid #ddd; padding: 16px; margin-top: 16px; }
+    .label { color: #555; font-size: 13px; margin-bottom: 4px; }
+    .value { white-space: pre-wrap; margin: 0 0 12px; }
+    .type { font-weight: 650; }
+    .note { color: #7a4b00; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 10px; vertical-align: top; text-align: left; }
+    th { background: #f6f6f6; }
+    .clients { width: 100%; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Помощник менеджера поддержки</h1>
+  <p class="hint">Это не магазин и не анкета регистрации. Сюда менеджер переносит обращение клиента: кто написал (что известно) и сам текст. Программа определяет тип (оплата, доставка, жалоба) и пишет черновик ответа. Всё сохраняется в историю, чтобы проверять качество.</p>
+  <p class="hint">В демонстрационной базе уже есть покупатели. Чтобы проверить поиск, укажите только одно поле:</p>
+  <ul class="hint">
+    <li>Анна Котова — телефон +7 900 111-22-33, заказ 45812, почты нет (как после регистрации только с ФИО и телефоном)</li>
+    <li>Иван Петров — ivan@mail.test, заказ 10001</li>
+    <li>Мария Орлова — maria@shop.test, телефона нет, заказ 22020</li>
+    <li>Сергей Волков — +7 900 444-55-66, заказ 33011, почты нет</li>
+  </ul>
+
+  <form id="form">
+    <div class="row">
+      <div>
+        <label for="client_name">Имя клиента</label>
+        <input id="client_name" placeholder="что помните">
+      </div>
+      <div>
+        <label for="client_email">Email</label>
+        <input id="client_email" placeholder="что помните">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="client_phone">Телефон</label>
+        <input id="client_phone" placeholder="что помните">
+      </div>
+      <div>
+        <label for="order_number">Номер заказа</label>
+        <input id="order_number" placeholder="что помните">
+      </div>
+    </div>
+    <label for="text">Обращение</label>
+    <textarea id="text" required placeholder="Что случилось: списание, доставка, брак…"></textarea>
+    <label for="channel">Откуда пришло</label>
+    <select id="channel">
+      <option value="email">электронная почта</option>
+      <option value="form">форма на сайте</option>
+      <option value="chat">чат</option>
+    </select>
+    <button type="submit">Разобрать обращение</button>
+  </form>
+
+  <div id="status" class="hint" style="margin-top:12px"></div>
+
+  <section id="result" class="result" hidden>
+    <h2>Результат для менеджера</h2>
+    <div class="label">Карточка клиента</div>
+    <p id="result-client" class="value"></p>
+    <div class="label">Тип</div>
+    <p id="result-type" class="value type"></p>
+    <div class="label">Черновик ответа клиенту</div>
+    <p id="result-draft" class="value"></p>
+    <p id="result-note" class="note" hidden>Стоит глянуть оператору: текст слишком короткий или спорный.</p>
+  </section>
+
+  <h2>Клиенты</h2>
+  <div id="clients"></div>
+
+  <h2>История обращений</h2>
+  <div id="history"></div>
+
+  <script>
+    const CATEGORIES = {
+      billing: "Оплата",
+      support: "Поддержка",
+      complaint: "Жалоба",
+      other: "Другое",
+    };
+
+    const form = document.getElementById("form");
+    const status = document.getElementById("status");
+    const result = document.getElementById("result");
+    const resultClient = document.getElementById("result-client");
+    const resultType = document.getElementById("result-type");
+    const resultDraft = document.getElementById("result-draft");
+    const resultNote = document.getElementById("result-note");
+    const history = document.getElementById("history");
+    const clients = document.getElementById("clients");
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function clientLine(item) {
+      return [
+        item.client_name,
+        item.client_email,
+        item.client_phone,
+        item.order_number ? "заказ " + item.order_number : "",
+      ].filter(Boolean).join(" · ") || item.client_id;
+    }
+
+    function fillClientFields(item) {
+      if (!item) return;
+      if (item.client_name) document.getElementById("client_name").value = item.client_name;
+      if (item.client_email) document.getElementById("client_email").value = item.client_email;
+      if (item.client_phone) document.getElementById("client_phone").value = item.client_phone;
+      if (item.order_number) document.getElementById("order_number").value = item.order_number;
+      resultClient.textContent = clientLine(item);
+    }
+
+    function renderHistory(items) {
+      if (!items.length) {
+        history.innerHTML = "<p class=\"hint\">Пока нет записей.</p>";
+        return;
+      }
+      history.innerHTML = items.map((item) => {
+        const type = CATEGORIES[item.category] || item.category || "—";
+        return `<article class="item">
+          <div class="label">${escapeHtml(clientLine(item))} · ${escapeHtml(type)}</div>
+          <table>
+            <tr><th>Обращение</th><th>Черновик ответа</th></tr>
+            <tr>
+              <td>${escapeHtml(item.text)}</td>
+              <td>${escapeHtml(item.draft_reply)}</td>
+            </tr>
+          </table>
+        </article>`;
+      }).join("");
+    }
+
+    function renderClients(items) {
+      if (!items.length) {
+        clients.innerHTML = "<p class=\"hint\">Пока нет клиентов.</p>";
+        return;
+      }
+      const rows = items.map((item) => `<tr>
+        <td>${escapeHtml(item.name)}</td>
+        <td>${escapeHtml(item.email)}</td>
+        <td>${escapeHtml(item.phone)}</td>
+      </tr>`).join("");
+      clients.innerHTML = `<table class="clients">
+        <tr><th>Имя</th><th>Email</th><th>Телефон</th></tr>
+        ${rows}
+      </table>`;
+    }
+
+    async function reloadLists() {
+      const [ticketRes, clientRes] = await Promise.all([
+        fetch("/tickets"),
+        fetch("/clients"),
+      ]);
+      const tickets = await ticketRes.json();
+      renderHistory(tickets);
+      renderClients(await clientRes.json());
+      return tickets;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      status.textContent = "Обрабатываем…";
+      result.hidden = true;
+      const name = document.getElementById("client_name").value.trim();
+      const email = document.getElementById("client_email").value.trim();
+      const phone = document.getElementById("client_phone").value.trim();
+      const order = document.getElementById("order_number").value.trim();
+      const text = document.getElementById("text").value.trim();
+      if (!text) {
+        status.textContent = "Нужен текст обращения.";
+        return;
+      }
+      const payload = {
+        text,
+        channel: document.getElementById("channel").value,
+        client_id: email || phone || order || name || "аноним",
+        client_name: name,
+        client_email: email,
+        client_phone: phone,
+        order_number: order,
+      };
+      try {
+        const response = await fetch("/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          status.textContent = response.status === 429
+            ? "Слишком много запросов. Подождите минуту и попробуйте снова."
+            : "Не удалось обработать обращение.";
+          return;
+        }
+        status.textContent = "";
+        resultType.textContent = CATEGORIES[data.category] || data.category;
+        resultDraft.textContent = data.draft_reply;
+        resultNote.hidden = !data.escalate;
+        result.hidden = false;
+        const tickets = await reloadLists();
+        fillClientFields(tickets[0]);
+      } catch (error) {
+        status.textContent = "Сервис недоступен. Запустите uvicorn и обновите страницу.";
+      }
+    });
+
+    reloadLists().catch(() => {
+      history.innerHTML = "<p class=\"hint\">Историю не удалось загрузить.</p>";
+    });
+  </script>
+</body>
+</html>

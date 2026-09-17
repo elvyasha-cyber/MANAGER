@@ -1,0 +1,52 @@
+### health
+GET http://localhost:8000/health
+
+### D2 billing
+POST http://localhost:8000/triage
+Content-Type: application/json
+
+{
+  "text": "С карты списали 3490 ₽ за заказ, в кабинете статус всё ещё «ожидает оплаты». Чек не пришёл.",
+  "channel": "email",
+  "client_id": "demo-billing"
+}
+
+### D2 support
+POST http://localhost:8000/triage
+Content-Type: application/json
+
+{
+  "text": "Заказ 45812 уехал в пункт выдачи, но в приложении нет кода получения. Как забрать посылку?",
+  "channel": "chat",
+  "client_id": "demo-support"
+}
+
+### D2 complaint
+POST http://localhost:8000/triage
+Content-Type: application/json
+
+{
+  "text": "Курьер бросил коробку у двери и уехал. Наушники внутри треснули, очень недовольна доставкой.",
+  "channel": "form",
+  "client_id": "demo-complaint"
+}
+
+### D2 other / D4 мало данных
+POST http://localhost:8000/triage
+Content-Type: application/json
+
+{
+  "text": "Помогите",
+  "channel": "chat",
+  "client_id": "demo-thin"
+}
+
+### D6 слишком длинный текст
+POST http://localhost:8000/triage
+Content-Type: application/json
+
+{
+  "text": "{{ 'а' * 2001 }}",
+  "channel": "email",
+  "client_id": "demo-long"
+}
