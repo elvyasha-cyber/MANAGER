@@ -114,7 +114,9 @@ sqlite3 data/tickets.db "SELECT * FROM clients;"
 
 Без `sqlite3` тот же файл открывается в DB Browser for SQLite или DBeaver: `data/tickets.db`.
 
-### Docker
+### Docker (локально)
+
+На компьютере должен быть запущен Docker Desktop. Порт 8000 не должен быть занят другим процессом (например `uvicorn`).
 
 ```powershell
 copy .env.example .env
@@ -122,9 +124,68 @@ copy .env.example .env
 docker compose up --build
 ```
 
-Сервис: http://localhost:8000
+Сервис: http://localhost:8000  
+Остановка: Ctrl+C в том же терминале.
 
-Тот же `Dockerfile` можно собрать на хостинге (Render, Railway и т.п.). Ключ задаётся секретом окружения, в репозиторий он не входит.
+Образ собирается из `Dockerfile` на вашей машине. В Docker Hub он сам не публикуется.
+
+## Развёртывание на сервере
+
+На сервере крутится **тот же** Docker-образ, что и локально. Код берётся из GitHub, ключ ProxyAPI задаётся секретом окружения и в репозиторий не попадает.
+
+База SQLite на сервере — отдельный файл, не ваш `D:\MANAGER\data\tickets.db`. На бесплатном хостинге после сна или редеплоя журнал может обнулиться — для демо это нормально.
+
+Проверка после деплоя:
+
+```bash
+curl https://ВАШ-ХОСТ/health
+curl -X POST https://ВАШ-ХОСТ/triage -H "Content-Type: application/json" -d "{\"text\":\"С карты списали оплату, чек не пришёл.\",\"channel\":\"email\",\"client_id\":\"demo-1\"}"
+```
+
+Форма: `https://ВАШ-ХОСТ/`
+
+### Вариант 1. Render (готовый `render.yaml`)
+
+1. Аккаунт на [render.com](https://render.com), репозиторий уже на GitHub: https://github.com/elvyasha-cyber/MANAGER
+2. Dashboard → **New** → **Web Service** → подключить этот репозиторий.
+3. Runtime: **Docker**. Render подхватит `Dockerfile` и `render.yaml` (сервис `support-triage`, проверка `GET /health`).
+4. Environment → добавьте секрет `OPENAI_API_KEY` (ключ с proxyapi.ru). Остальные переменные из `render.yaml` подставятся сами: `OPENAI_BASE_URL`, `OPENAI_MODEL`, `RATE_LIMIT_PER_MINUTE`, `SQLITE_PATH=/data/tickets.db`.
+5. **Create Web Service** / **Deploy**. Когда статус Live, откройте выданный URL.
+
+То же можно сделать на Railway: New Project → Deploy from GitHub → Dockerfile, секрет `OPENAI_API_KEY`.
+
+### Вариант 2. Свой сервер (VPS) и Docker Compose
+
+Нужны: Linux-сервер с Docker и Docker Compose, открытый порт 8000 (или 80/443, если поставите прокси).
+
+```bash
+git clone https://github.com/elvyasha-cyber/MANAGER.git
+cd MANAGER
+cp .env.example .env
+```
+
+В `.env` на сервере укажите ключ (файл на сервере, не в git):
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.proxyapi.ru/v1
+OPENAI_MODEL=gpt-4o-mini
+RATE_LIMIT_PER_MINUTE=10
+SQLITE_PATH=/data/tickets.db
+```
+
+Запуск в фоне:
+
+```bash
+docker compose up -d --build
+```
+
+Сайт: `http://IP-СЕРВЕРА:8000`
+
+Логи: `docker compose logs -f`  
+Остановка: `docker compose down` (том `./data` с базой останется на диске).
+
+Чтобы открыть по домену и HTTPS, поставьте nginx или Caddy перед контейнером (прокси на `127.0.0.1:8000`). Образ в Docker Hub для этого не обязателен: сервер сам собирает его из `Dockerfile`.
 
 ### Тесты без живой модели
 
